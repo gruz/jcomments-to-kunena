@@ -1,7 +1,7 @@
 <?php
 // phpcs:ignore
 
-namespace JCommentsToKunenaCli;
+namespace gruz\JCommentsToKunenaCli;
 
 \JLoader::registerNamespace('JCommentsToKunenaCli', __DIR__, false, false, 'psr4');
 
