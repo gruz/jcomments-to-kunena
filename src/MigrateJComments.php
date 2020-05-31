@@ -131,7 +131,7 @@ class MigrateJComments extends Base
 
             $category = $this->kunena->upsertForum($data, $findByAlias = true);
 
-            $this->topForums[$commentObject->forum->topForumAlias] = $category;
+            $this->topForums[$commentObject->lang . '.' . $commentObject->object_group] = $category;
         }
 // echo '<pre> Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL;
 // print_r($this->topForums);
@@ -140,9 +140,49 @@ class MigrateJComments extends Base
 // print_r($this->topForums);
 // echo PHP_EOL . '</pre>' . PHP_EOL;
         $comments = $this->jcomments->getComments();
-echo '<pre> Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL;
-print_r($comments);
-echo PHP_EOL . '</pre>' . PHP_EOL;
+// echo '<pre> Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL;
+// print_r($comments);
+// echo PHP_EOL . '</pre>' . PHP_EOL;
+// exit;
+
+        $db = \JFactory::getDbo();
+        $query = $db->getQuery(true);
+
+        $query
+            ->select('max(id)')
+            ->from($db->quoteName('#__kunena_messages'));
+        $db->setQuery($query);
+        $step = $db->loadResult();
+
+        foreach ($comments as &$comment) {
+            // $comment->parent_forum_id = $this->upsertCommentForum($comment);
+
+            $data = $this->kunena->getExampleForumArray();
+            $data['name'] =  $comment->title;
+            $data['alias'] =  $comment->title_alias;
+            $data['parent_id'] =  $this->topForums[$comment->lang . '.' . $comment->object_group]->id;
+
+
+            $category = $this->kunena->upsertForum($data, $findByAlias = true);
+
+            $comment->kunena_id = $comment->id+$step;
+            $comment->kunena_parent = $comment->parent > 0 ? $comment->parent+$step : 0;
+            $comment->forum_id = $category->id;
+
+            if (empty($comment->kunena_parent)) {
+                $topic_title = strip_tags($comment->comment);
+                $comment->topic_title = substr($topic_title, 0, 150);
+                if (\strlen($topic_title) > strlen($comment->comment)) {
+                    $comment->topic_title .= '...';
+                }
+            }
+
+            $this->kunena->addOrUpdateCommentAsPost($comment);
+
+            // else {
+            //     $this->upsertPost($comment);
+            // }
+        }
 exit;
         foreach ($comments as $comment) {
             if (empty($comment->parent)) {

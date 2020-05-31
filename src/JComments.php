@@ -77,97 +77,42 @@ class JComments extends Base
 
     public function getComments()
     {
-        $object_groups = $this->getAvailableObjects();
-
         $comments = [];
 
-        foreach ($object_groups as $object_group) {
-            switch ($object_group) {
-                case 'com_ars_category':
-                    // $join_table = '#__ars_categories';
-                    // $join_column = 'id';
-                    $join_select = ['title'];
-                    // $fa_lang_reference_table = 'ars_categories';
-                    break;
-                case 'com_content':
-                default:
-                    // $join_table = '#__categories';
-                    // $join_column = 'id';
-                    $join_select = ['title'];
-                    // $fa_lang_reference_table = 'content';
-                    break;
-            }
 
-            // $jc = 'jc';
-            // $forum = 'forum';
-            // $falang = 'falang';
+        $db = \JFactory::getDbo();
+        $query = $db->getQuery(true);
 
-            // foreach ($join_select as $k => $field) {
-            //     $join_select[ $k ] = $forum . '.' . $field . ' AS ' . $forum . '_' . $field;
-            // }
+        $query
+            ->select('jc.id as aid, jc.*, objects.*')
+            ->from($db->quoteName('#__jcomments') . ' AS jc ')
+            ->join('LEFT', $db->quoteName('#__jcomments_objects', 'objects') . ' ON (`jc`.object_id = `objects`.object_id )')
+            ->where('`jc`.`published` = 1')
+            ->where('`jc`.lang = `objects`.lang')
+            ->where('`jc`.object_group = `objects`.object_group')
+            ->order($db->quoteName('jc.id'));
 
-            // $fileds_to_select = implode(',', $join_select);
-
-            $db = \JFactory::getDbo();
-            $query = $db->getQuery(true);
-
-            $query
-                ->select('*')
-                ->from($db->quoteName('#__jcomments') . ' AS jc ')
-                ->join('LEFT', $db->quoteName('#__jcomments_objects', 'objects') . ' ON (`jc`.object_id = `objects`.object_id )')
-                ->where('`jc`.`published` = 1')
-                ->where('`jc`.lang = `objects`.lang')
-                ->where('`jc`.object_group = `objects`.object_group')
-                ->order($db->quoteName('jc.id'));
-    
-            // $query->select($jc . '.*, ' . $fileds_to_select . ', ' . $falang . '.value AS falang_title, ' . $falang . '.language_id , languages.lang_id' );
-            // $query->from($db->quoteName('#__jcomments') . ' ' . $jc);
-            // $query->join('LEFT', $db->quoteName('#__languages', 'languages') . ' ON (' . $db->quoteName('languages.lang_code') . ' = ' . $db->quoteName($jc . '.lang') . ')');
-            // $query->join('LEFT', $db->quoteName($join_table, $forum) . ' ON (' . $db->quoteName($jc . '.object_id') . ' = ' . $db->quoteName($forum . '.id') . ')');
-            // $query->join('LEFT', $db->quoteName('#__falang_content', $falang) . ' ON (' . $db->quoteName($falang . '.reference_id') . ' = ' . $db->quoteName($jc . '.object_id') . ')');
-            // $query->where($db->quoteName($jc . '.object_group') . " = " . $db->quote($object_group));
-            // $query->where($db->quoteName($jc . '.published') . " = " . $db->quote(1));
-            // $query->where($db->quoteName($falang . '.reference_table') . " = " . $db->quote($fa_lang_reference_table));
-            // $query->where($db->quoteName($falang . '.reference_field') . " = " . $db->quote('title'));
-            // // $query->where($db->quoteName($falang . '.language_id') . " = " . $db->quoteName('languages.lang_id'));
-            // $query->order($db->quoteName($jc . '.id'));
-
-            if ($this->debug) {
-                $query->setLimit('2');
-            }
-
-            // if ($object_group !== 'com_ars_category') {
-
-    // $a = $query->__toString();
-    // echo '<pre> Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL;
-    // print_r($a);
-    // echo PHP_EOL . '</pre>' . PHP_EOL;
-    // exit;
-            // }
-            // $query
-            // ->select(array('a.*', 'b.username', 'b.name'))
-            // ->from($db->quoteName('#__content', 'a'))
-            // ->join('INNER', $db->quoteName('#__users', 'b') . ' ON (' . $db->quoteName('a.created_by') . ' = ' . $db->quoteName('b.id') . ')')
-            // ->where($db->quoteName('b.username') . ' LIKE \'a%\'')
-            // ->order($db->quoteName('a.created') . ' DESC');
-            $db->setQuery($query);
-
-            $rows = $db->loadObjectList();
-
-            $rows = $this->prepareCommentsAdditionalFields($rows);
-
-            foreach ($rows as $key => $value) {
-                $rows[$key] = $this->prepareForumTitleAndAlias($value);
-
-                // if ($value->language_id === $value->lang_id) {
-                //     $rows[$key]->kunena_category_name = $value->falang_title;
-                // } else {
-                //     $rows[$key]->kunena_category_name = $value->forum_title;
-                // }
-            }
-
-            $comments = array_merge($comments, $rows);
+        if ($this->debug) {
+            $query->setLimit('2');
         }
+
+        // echo '<pre> Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL;
+        // print_r($query->toString());
+        // echo PHP_EOL . '</pre>' . PHP_EOL;
+
+        $db->setQuery($query);
+
+        $rows = $db->loadObjectList();
+
+        $rows = $this->prepareCommentsAdditionalFields($rows);
+
+        foreach ($rows as $key => $value) {
+            $rows[$key] = $this->prepareForumTitleAndAlias($value);
+            $rows[$key]->id = $rows[$key]->aid;
+            unset($rows[$key]->aid);
+        }
+
+        $comments = array_merge($comments, $rows);
 
         return $comments;
     }
@@ -190,7 +135,9 @@ class JComments extends Base
         // $comment->forum->alias = $alias;
         $comment->forum->topForumAlias = $topForumAlias;
 
-
+        if (isset($comment->title)) {
+            $comment->title_alias = \JFilterOutput::stringURLSafe($comment->title . '-' . $comment->object_group . '-' . $comment->id, $comment->lang);
+        }
         // if (!isset($comment->title)) {
         //     return $comment;
         // }

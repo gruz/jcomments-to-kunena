@@ -76,9 +76,9 @@ class Kunena extends Base
             // JLoader::register('KunenaForumAnnouncement', KPATH_FRAMEWORK . '/forum/announcement/announcement.php');
             JLoader::register('KunenaForumCategory', KPATH_FRAMEWORK . '/forum/category/category.php');
             // JLoader::register('KunenaForumCategoryUser', KPATH_FRAMEWORK . '/forum/category/user/user.php');
-            // JLoader::register('KunenaForumMessage', KPATH_FRAMEWORK . '/forum/message/message.php');
+            JLoader::register('KunenaForumMessage', KPATH_FRAMEWORK . '/forum/message/message.php');
             // JLoader::register('KunenaForumMessageThankyou', KPATH_FRAMEWORK . '/forum/message/thankyou/thankyou.php');
-            // JLoader::register('KunenaForumTopic', KPATH_FRAMEWORK . '/forum/topic/topic.php');
+            JLoader::register('KunenaForumTopic', KPATH_FRAMEWORK . '/forum/topic/topic.php');
             // JLoader::register('KunenaForumTopicPoll', KPATH_FRAMEWORK . '/forum/topic/poll/poll.php');
             // JLoader::register('KunenaForumTopicUser', KPATH_FRAMEWORK . '/forum/topic/user/user.php');
             // JLoader::register('KunenaForumTopicUserRead', KPATH_FRAMEWORK . '/forum/topic/user/read/read.php');
@@ -153,14 +153,77 @@ class Kunena extends Base
         return $id;
     }
 
+    public function upsert($tableName, $data)
+    {
+
+        $this->out('Upserting ' . $tableName . ' [white]' . $data['title'] . '[/] ', false, 5);
+
+        $className = '\\KunenaForum' . $tableName;
+        $item = new $className(['id' => $data['id'] ]);
+        $item->load();
+
+        $item->bind($data);
+
+        // if (!$item->exists()) {
+        //     $item->ordering = 99999;
+        // }
+
+        $item->save();
+
+        if ($item->exists()) {
+            $this->out('update is [light_green]DONE![/]', true);
+        } else {
+            $msg = JText::sprintf('Failed to save', $item->id, $item->getError());
+            $this->out('[red]'.$msg.'[/]', true, 5);
+        }
+        $this->out();
+
+
+        return $item;
+    }
+
     public function addOrUpdateCommentAsPost($comment) // phpcs:ignore
     {
-        $this->out('Loking the comment ..,', false);
-        $this->out('Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL . print_r($comment, true));
+        // $this->out('Loking the comment ..,', false);
+        // $this->out('Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL . print_r($comment, true));
 
+        if (empty($comment->kunena_parent)) {
+            $topic = [
+                'id' => $comment->kunena_id,
+                'category_id' => $comment->forum_id,
+                'subject' => $comment->topic_title,
+                'icon_id' => '0',
+                'label_id' => '0',
+                'locked' => '0',
+                'hold' => '0',
+                'ordering' => '0',
+                'posts' => '1',
+                'hits' => '0',
+                'attachments' => '0',
+                'poll_id' => '0',
+                'moved_id' => '0',
+                'first_post_id' => $comment->kunena_id,
+                'first_post_time' => strtotime($comment->date),
+                'first_post_userid' => $comment->userid,
+                'first_post_message' => $comment->topic_title,
+                'first_post_guest_name' => $comment->name,
+                'last_post_id' => '0',
+                'last_post_time' => strtotime($comment->date),
+                'last_post_userid' => '0',
+                'last_post_message' => '',
+                'last_post_guest_name' => '',
+                'rating' => '0',
+                'params' => '',
+
+                'title' => $comment->topic_title,
+            ];
+
+            $this->upsert('Topic', $topic);
+        }
+return;
         $post = [
-            'id' => $comment->id,
-            'parent' => $comment->parent,
+            'id' => $comment->kunena_id,
+            'parent' => $comment->kunena_parent,
             'thread' => $comment->parent,
             'catid' => $comment->forum_id,
             'name' => $comment->name,
@@ -177,48 +240,38 @@ class Kunena extends Base
             'moved' => '0',
             'modified_by' => null,
             'modified_time' => null,
-            'modified_reason' => ''
+            'modified_reason' => null,
+
+            * @property int    $thread
+            * @property int    $catid
+            * @property string $name
+            * @property int    $userid
+            * @property string $email
+            * @property string $subject
+            * @property int    $time
+            * @property string $ip
+            * @property int    $topic_emoticon
+            * @property int    $locked
+            * @property int    $hold
+            * @property int    $ordering
+            * @property int    $hits
+            * @property int    $moved
+            * @property int    $modified_by
+            * @property string $modified_time
+            * @property string $modified_reason
+            * @property string $params
+            * @property string $message
         ];
 
         $this->upsert('#__kunena_messages', $post);
 
         $postText = [
-            'mesid' => $comment->id,
+            'mesid' => $comment->kunena_id,
             'message' => $comment->comment,
         ];
 
         $this->upsert('#__kunena_messages_text', $postText, 'mesid');
 
-        if (empty($comment->parent)) {
-            $topic = [
-                'id' => $comment->id,
-                'category_id' => $comment->forum_id,
-                'subject' => $postTitle,
-                'icon_id' => '0',
-                'label_id' => '0',
-                'locked' => '0',
-                'hold' => '0',
-                'ordering' => '0',
-                'posts' => '1',
-                'hits' => '0',
-                'attachments' => '0',
-                'poll_id' => '0',
-                'moved_id' => '0',
-                'first_post_id' => $comment->id,
-                'first_post_time' => $date,
-                'first_post_userid' => $comment->user_id,
-                'first_post_message' => $comment->comment,
-                'first_post_guest_name' => $comment->name,
-                'last_post_id' => '0',
-                'last_post_time' => $date,
-                'last_post_userid' => '0',
-                'last_post_message' => '',
-                'last_post_guest_name' => '',
-                'rating' => '0',
-                'params' => ''
-            ];
-            $this->upsert('#__kunena_topics', $topic);
-        }
 
         // $subscribe = [
         //     'user_id' => $comment->user_id,
