@@ -3,6 +3,8 @@
 
 namespace gruz\JCommentsToKunenaCli;
 
+use JText;
+
 /**
  * Undocumented class
  *
@@ -108,42 +110,22 @@ class MigrateJComments extends Base
     {
         $this->preRunInit();
 
-        // Get availabe JComments languages and create forums at top level per language.
+        $msg = JText::sprintf('==== Top level categories create  ===');
+        $this->out('[black|light_gray]'.$msg . ' { '.'[/]', true, 2);
+        // Get availabe JComments languages and create forums at top level per language {
         $jCommentsObjects = $this->jcomments->getAvailaleCommentLanguages();
-        $languageCategories = [];
 
-        foreach ($jCommentsObjects as $commentObject) {
-            $commentObject = $this->jcomments->prepareForumTitleAndAlias($commentObject);
+        $this->createTopForumsAsLanguageThenObjectType($jCommentsObjects);
+        // Get availabe JComments languages and create forums at top level per language }
+        $this->out('[black|light_gray]'.$msg . ' } '.'[/]', true, 2);
 
-            if (empty($languageCategories[$commentObject->lang])) {
-                $data = $this->kunena->getExampleForumArray();
-                $data['name'] =  $commentObject->language->title_native;
-                $data['alias'] =  \JFilterOutput::stringURLSafe($commentObject->language->title, $commentObject->language->lang_code);
-                $languageCategories[$commentObject->lang] = $this->kunena->upsertForum($data, $findByAlias = true);
-            }
-
-            $data = $this->kunena->getExampleForumArray();
-
-            $data['name'] =  $commentObject->forum->topForumTitle;
-            $data['alias'] =  $commentObject->forum->topForumAlias;
-            $data['parent_id'] =  $languageCategories[$commentObject->lang]->id;
-            
-
-            $category = $this->kunena->upsertForum($data, $findByAlias = true);
-
-            $this->topForums[$commentObject->lang . '.' . $commentObject->object_group] = $category;
-        }
 // echo '<pre> Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL;
 // print_r($this->topForums);
 // echo PHP_EOL . '</pre>' . PHP_EOL;
-// echo '<pre> Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL;
-// print_r($this->topForums);
-// echo PHP_EOL . '</pre>' . PHP_EOL;
-        $comments = $this->jcomments->getComments();
-// echo '<pre> Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL;
-// print_r($comments);
-// echo PHP_EOL . '</pre>' . PHP_EOL;
-// exit;
+
+        // Set zero for all
+        $limitComments = 7;
+        $comments = $this->jcomments->getComments($limitComments);
 
         $db = \JFactory::getDbo();
         $query = $db->getQuery(true);
@@ -153,30 +135,35 @@ class MigrateJComments extends Base
             ->from($db->quoteName('#__kunena_messages'));
         $db->setQuery($query);
         $step = $db->loadResult();
+        $step = 0;
+// echo '<pre> Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL;
+// print_r($step);
+// echo PHP_EOL . '</pre>' . PHP_EOL;
+// exit;
 
         foreach ($comments as &$comment) {
-            // $comment->parent_forum_id = $this->upsertCommentForum($comment);
-
             $data = $this->kunena->getExampleForumArray();
+
+            // All comments in my case have the same title for any thread,
+            // so kunens category name would be calculated the same way for all comments.
+            // I could create something like ->findTopParentComment($comment), but no need for now.
             $data['name'] =  $comment->title;
             $data['alias'] =  $comment->title_alias;
             $data['parent_id'] =  $this->topForums[$comment->lang . '.' . $comment->object_group]->id;
+echo '<pre> Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL;
+print_r($data);
+echo PHP_EOL . '</pre>' . PHP_EOL;
+continue;
+            // Create or find Kunena category for current comment
+            $category = $this->kunena->upsertCategory($data, $findByAlias = true);
 
-
-            $category = $this->kunena->upsertForum($data, $findByAlias = true);
-
-            $comment->kunena_id = $comment->id+$step;
-            $comment->kunena_parent = $comment->parent > 0 ? $comment->parent+$step : 0;
-            $comment->forum_id = $category->id;
-
-            if (empty($comment->kunena_parent)) {
-                $topic_title = strip_tags($comment->comment);
-                $comment->topic_title = substr($topic_title, 0, 150);
-                if (\strlen($topic_title) > strlen($comment->comment)) {
-                    $comment->topic_title .= '...';
-                }
-            }
-
+            // $comment->kunena_id = $comment->id+$step;
+            // $comment->kunena_parent = $comment->parent > 0 ? $comment->parent+$step : 0;
+            $comment->category_id = $category->id;
+// echo '<pre> Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL;
+// print_r($comment);
+// echo PHP_EOL . '</pre>' . PHP_EOL;
+// exit;
             $this->kunena->addOrUpdateCommentAsPost($comment);
 
             // else {
@@ -191,7 +178,7 @@ exit;
                 $comment->forum->parent = $this->mapParents[$comment->parent];
             }
 
-            $comment->catregoryObject = $this->kunena->upsertForum($comment);
+            $comment->catregoryObject = $this->kunena->upsertCategory($comment);
 
             $comment->user_id = $this->user->upsertUser($comment);
             $comment = $this->upserPost($comment);
@@ -236,5 +223,31 @@ exit;
 
         $this->debug = false;
         $this->debug = true;
+    }
+
+    public function createTopForumsAsLanguageThenObjectType($jCommentsObjects)
+    {
+        $languageCategories = [];
+
+        foreach ($jCommentsObjects as $commentObject) {
+            $commentObject = $this->jcomments->prepareForumTitleAndAlias($commentObject);
+
+            if (empty($languageCategories[$commentObject->lang])) {
+                $data = $this->kunena->getExampleForumArray();
+                $data['name'] =  $commentObject->language->title_native;
+                $data['alias'] =  \JFilterOutput::stringURLSafe($commentObject->language->title, $commentObject->language->lang_code);
+                $languageCategories[$commentObject->lang] = $this->kunena->upsertCategory($data, $findByAlias = true);
+            }
+
+            $data = $this->kunena->getExampleForumArray();
+
+            $data['name'] =  $commentObject->forum->topForumTitle;
+            $data['alias'] =  $commentObject->forum->topForumAlias;
+            $data['parent_id'] =  $languageCategories[$commentObject->lang]->id;
+
+            $category = $this->kunena->upsertCategory($data, $findByAlias = true);
+
+            $this->topForums[$commentObject->lang . '.' . $commentObject->object_group] = $category;
+        }
     }
 }

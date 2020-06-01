@@ -75,16 +75,20 @@ class JComments extends Base
         return $result;
     }
 
-    public function getComments()
+    public function getComments($limit = 0)
     {
         $comments = [];
-
 
         $db = \JFactory::getDbo();
         $query = $db->getQuery(true);
 
         $query
-            ->select('jc.id as aid, jc.*, objects.*')
+            ->select('
+                jc.*, 
+                objects.object_group,
+                objects.title,
+                objects.link
+            ')
             ->from($db->quoteName('#__jcomments') . ' AS jc ')
             ->join('LEFT', $db->quoteName('#__jcomments_objects', 'objects') . ' ON (`jc`.object_id = `objects`.object_id )')
             ->where('`jc`.`published` = 1')
@@ -92,24 +96,26 @@ class JComments extends Base
             ->where('`jc`.object_group = `objects`.object_group')
             ->order($db->quoteName('jc.id'));
 
-        if ($this->debug) {
-            $query->setLimit('2');
-        }
-
-        // echo '<pre> Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL;
-        // print_r($query->toString());
-        // echo PHP_EOL . '</pre>' . PHP_EOL;
-
+        $query->setLimit($limit);
         $db->setQuery($query);
 
         $rows = $db->loadObjectList();
+        // echo '<pre> Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL;
+        // echo $db->replacePrefix((string) $query);
+        // echo PHP_EOL . '</pre>' . PHP_EOL;
+        // exit;
 
+        // echo '<pre> Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL;
+        // print_r($rows);
+        // echo PHP_EOL . '</pre>' . PHP_EOL;
+        // exit;
         $rows = $this->prepareCommentsAdditionalFields($rows);
 
         foreach ($rows as $key => $value) {
             $rows[$key] = $this->prepareForumTitleAndAlias($value);
-            $rows[$key]->id = $rows[$key]->aid;
-            unset($rows[$key]->aid);
+            $rows[$key]->comment = \str_replace('<br />', PHP_EOL, $rows[$key]->comment);
+            // $rows[$key]->id = $rows[$key]->comment_id;
+            // unset($rows[$key]->comment_id);
         }
 
         $comments = array_merge($comments, $rows);
@@ -119,12 +125,7 @@ class JComments extends Base
 
     public function prepareForumTitleAndAlias($comment)
     {
-        // $lang = explode('-', $comment->lang);
-        // $lang = $lang[0];
-        // $topForumAlias = $lang . '-' . $comment->object_group;
-        // $topForumAlias = \JFilterOutput::stringURLSafe($topForumAlias);
         $topForumAlias = \JFilterOutput::stringURLSafe($comment->extensions_title, $comment->lang);
-        // $topForumTitle = ucfirst($lang)  . ' ' . ucfirst($comment->object_group);
         $topForumTitle = $comment->extensions_title;
 
         if (! isset($comment->forum)) {
@@ -136,32 +137,14 @@ class JComments extends Base
         $comment->forum->topForumAlias = $topForumAlias;
 
         if (isset($comment->title)) {
-            $comment->title_alias = \JFilterOutput::stringURLSafe($comment->title . '-' . $comment->object_group . '-' . $comment->id, $comment->lang);
+            if (empty($comment->parent)) {
+                $parent_id = $comment->id;
+            } else {
+                list($zero, $parent_id) = explode(',' , $comment->path);
+            }
+
+            $comment->title_alias = \JFilterOutput::stringURLSafe($comment->title . '-' . $comment->object_group . '-' . $parent_id, $comment->lang);
         }
-        // if (!isset($comment->title)) {
-        //     return $comment;
-        // }
-        // if (empty(trim($comment->title))) {
-        //     $len = 200;
-
-        //     if (strlen($comment->comment) > $len) {
-        //         $pos = strpos($comment->comment, ' ', $len);
-        //         $comment->title = substr($comment->comment, 0, $pos) . '...';
-        //     } else {
-        //         $comment->title = $comment->comment;
-        //         foreach (['.', '!' , ',', '?'] as $glue) {
-        //             $tmp = explode($glue, trim($comment->comment), 2);
-
-        //             if (count($tmp) > 0 && !empty($tmp[1]) ) {
-        //                 $comment->title = $tmp[0] . '.';
-        //                 break;
-        //             }
-        //         }
-        //     }
-        // }
-
-        // $comment->forum->date = strtotime($comment->date);
-
 
         return $comment;
     }

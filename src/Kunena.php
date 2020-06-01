@@ -80,7 +80,7 @@ class Kunena extends Base
             // JLoader::register('KunenaForumMessageThankyou', KPATH_FRAMEWORK . '/forum/message/thankyou/thankyou.php');
             JLoader::register('KunenaForumTopic', KPATH_FRAMEWORK . '/forum/topic/topic.php');
             // JLoader::register('KunenaForumTopicPoll', KPATH_FRAMEWORK . '/forum/topic/poll/poll.php');
-            // JLoader::register('KunenaForumTopicUser', KPATH_FRAMEWORK . '/forum/topic/user/user.php');
+            JLoader::register('KunenaForumTopicUser', KPATH_FRAMEWORK . '/forum/topic/user/user.php');
             // JLoader::register('KunenaForumTopicUserRead', KPATH_FRAMEWORK . '/forum/topic/user/read/read.php');
             // JLoader::register('KunenaForumTopicRate', KPATH_FRAMEWORK . '/forum/topic/rate/rate.php');
             // JLoader::register('KunenaIcons', KPATH_FRAMEWORK . '/icons/icons.php');
@@ -184,53 +184,25 @@ class Kunena extends Base
 
     public function addOrUpdateCommentAsPost($comment) // phpcs:ignore
     {
-        // $this->out('Loking the comment ..,', false);
-        // $this->out('Line: ' . __LINE__ . ' | ' . __FILE__ . PHP_EOL . print_r($comment, true));
+        $topicId = $this->getTopicId($comment);
 
-        if (empty($comment->kunena_parent)) {
-            $topic = [
-                'id' => $comment->kunena_id,
-                'category_id' => $comment->forum_id,
-                'subject' => $comment->topic_title,
-                'icon_id' => '0',
-                'label_id' => '0',
-                'locked' => '0',
-                'hold' => '0',
-                'ordering' => '0',
-                'posts' => '1',
-                'hits' => '0',
-                'attachments' => '0',
-                'poll_id' => '0',
-                'moved_id' => '0',
-                'first_post_id' => $comment->kunena_id,
-                'first_post_time' => strtotime($comment->date),
-                'first_post_userid' => $comment->userid,
-                'first_post_message' => $comment->topic_title,
-                'first_post_guest_name' => $comment->name,
-                'last_post_id' => '0',
-                'last_post_time' => strtotime($comment->date),
-                'last_post_userid' => '0',
-                'last_post_message' => '',
-                'last_post_guest_name' => '',
-                'rating' => '0',
-                'params' => '',
-
-                'title' => $comment->topic_title,
-            ];
-
-            $this->upsert('Topic', $topic);
+        if (!$comment->userid) {
+            $comment->userid = $this->getUserIdByEmail($comment->email);
+        }
+        if (!$comment->userid) {
+            $comment->userid = $this->addJoomlaUser($comment->name, $comment->email, \uniqid(), $comment->email, $comment->date);
         }
 return;
         $post = [
             'id' => $comment->kunena_id,
             'parent' => $comment->kunena_parent,
-            'thread' => $comment->parent,
+            'thread' => $parent_id,
             'catid' => $comment->forum_id,
             'name' => $comment->name,
-            'userid' => $comment->user_id,
+            'userid' => $comment->userid,
             'email' => $comment->email,
-            'subject' => $postTitle,
-            'time' => $date,
+            'subject' => $comment->title,
+            'time' => strtotime($comment->date),
             'ip' => $comment->ip,
             'topic_emoticon' => '0',
             'locked' => '0',
@@ -241,28 +213,35 @@ return;
             'modified_by' => null,
             'modified_time' => null,
             'modified_reason' => null,
+            'message' => str_replace('<br />', PHP_EOL, $comment->comment),
 
-            * @property int    $thread
-            * @property int    $catid
-            * @property string $name
-            * @property int    $userid
-            * @property string $email
-            * @property string $subject
-            * @property int    $time
-            * @property string $ip
-            * @property int    $topic_emoticon
-            * @property int    $locked
-            * @property int    $hold
-            * @property int    $ordering
-            * @property int    $hits
-            * @property int    $moved
-            * @property int    $modified_by
-            * @property string $modified_time
-            * @property string $modified_reason
-            * @property string $params
-            * @property string $message
+
+            'title' => $comment->title,
+
+            // * @property int    $thread
+            // * @property int    $catid
+            // * @property string $name
+            // * @property int    $userid
+            // * @property string $email
+            // * @property string $subject
+            // * @property int    $time
+            // * @property string $ip
+            // * @property int    $topic_emoticon
+            // * @property int    $locked
+            // * @property int    $hold
+            // * @property int    $ordering
+            // * @property int    $hits
+            // * @property int    $moved
+            // * @property int    $modified_by
+            // * @property string $modified_time
+            // * @property string $modified_reason
+            // * @property string $params
+            // * @property string $message
         ];
 
+        $this->upsert('Message', $post);
+        // exit;
+return;
         $this->upsert('#__kunena_messages', $post);
 
         $postText = [
@@ -288,6 +267,55 @@ return;
         // $this->insert('#__kunena_user_topics', $subscribe);
     }
 
+    public function addJoomlaUser($name, $username, $password, $email, $date) {
+        $_SERVER['HTTP_HOST'] = 'https://gruz.ml';
+        jimport('joomla.user.helper');
+
+        $data = array(
+            "name"=>$name,
+            "username"=>$username,
+            "password"=>$password,
+            "password2"=>$password,
+            "email"=>$email,
+            "block"=>0,
+            "groups"=>array("1","2"),
+            "registerDate" => $date,
+        );
+
+        $user = new \JUser;
+        //Write to database
+        if(!$user->bind($data)) {
+            throw new \Exception("Could not bind data. Error: " . $user->getError());
+        }
+        if (!$user->save()) {
+            throw new \Exception("Could not save user. Error: " . $user->getError());
+        }
+
+        return $user->id;
+    }
+
+    public function getUserIdByEmail($email) {
+        $db = \JFactory::getDbo();
+        $query = $db->getQuery(true)
+            ->select($db->quoteName('id'))
+            ->from($db->quoteName('#__users'))
+            ->where($db->quoteName('email') . ' = ' . $db->quote($email));
+        $db->setQuery($query);
+
+        if ($id = $db->loadResult())
+        {
+            $user = \JTable::getInstance('User', 'JTable', array());
+            $user->load($id);
+            return $user->id;
+        }
+        else
+        {
+            // User with specified $email not found.
+            return false;
+        }
+    }
+
+    /*
     public function forumUpdate($forumId, $comment) // phpcs:ignore
     {
         $this->out('Updating forum [white]' . $comment->forum_title . '[/] ', true, 5);
@@ -308,8 +336,9 @@ return;
 
         return $id;
     }
+    */
 
-    public function upsertForum($post, $findByAlias = false)
+    public function upsertCategory($post, $findByAlias = false)
     {
         if ( is_object($post)) {
             $post = (array) $post;
@@ -327,33 +356,18 @@ return;
 
         \KunenaFactory::loadLanguage('com_kunena.controllers', 'admin');
 
-        // $app        = \JFactory::getApplication();
-        $isNew = empty($post ['catid']) ? true :false;
+        $categotyExists = !empty($post['catid']) ? true :false;
 
         $success = false;
 
         $arr = [];
-        if (!$isNew) {
+        if ($categotyExists) {
             $arr = ['id' => $post ['catid']];
         }
         $category = new \KunenaForumCategory($arr);
         $category->load();
 
-        // $parent = new \KunenaForumCategory(array('id' =>$post['parent_id']));
-        // $parent->load();
-
-
         $ignore = [];
-        // Nobody can change id or statistics
-        // $ignore = array('option', 'view', 'task', 'catid', 'id', 'id_last_msg', 'numTopics', 'numPosts', 'time_last_msg', 'aliases', 'aliases_all');
-
-        // User needs to be admin in parent (both new and old) in order to move category, parent_id=0 needs global admin rights
-
-        // if (!$this->me->isAdmin($parent) || ($category->exists() && !$this->me->isAdmin($category->getParent())))
-        // {
-        //     $ignore             = array_merge($ignore, array('parent_id', 'ordering'));
-        //     $post ['parent_id'] = $category->parent_id;
-        // }
 
         $category->bind($post, $ignore);
 
@@ -362,19 +376,6 @@ return;
         }
 
         $success = $category->save();
-        // $aliases_all = explode(',', $app->input->getString('aliases_all'));
-
-        // $aliases = $app->input->post->getArray(array('aliases' => ''));
-
-        // if ($aliases_all)
-        // {
-        //     $aliases = array_diff($aliases_all, $aliases['aliases']);
-
-        //     foreach ($aliases_all as $alias)
-        //     {
-        //         $category->deleteAlias($alias);
-        //     }
-        // }
 
         if (!$success) {
             $msg = JText::sprintf('COM_KUNENA_A_CATEGORY_SAVE_FAILED', $category->id, $category->getError());
@@ -384,7 +385,7 @@ return;
         $category->checkin();
 
         if ($success) {
-            if ( $isNew ) {
+            if ( $categotyExists ) {
                 $msg = JText::sprintf('COM_KUNENA_A_CATEGORY_SAVED', $category->name);
             } else {
 
@@ -433,4 +434,59 @@ return;
 
         return $arr;
     }
+
+    public function getTopicId($comment)
+    {
+        if (empty($comment->parent)) {
+            $topicId = $comment->id;
+        } else {
+            list($zero, $topicId) = explode(',', $comment->path);
+            return $topicId;
+        }
+
+        $topic_title = strip_tags($comment->comment);
+        $topic_title = substr($topic_title, 0, 150);
+        if (\strlen($topic_title) > strlen($comment->comment)) {
+            $topic_title .= '...';
+        }
+
+
+        // Try to create topic, may be needed
+        $topic = [
+            'id' => $topicId,
+            'category_id' => $comment->category_id,
+            'subject' => $topic_title,
+            'icon_id' => '0',
+            'label_id' => '0',
+            'locked' => '0',
+            'hold' => '0',
+            'ordering' => '0',
+            'posts' => '1',
+            'hits' => '0',
+            'attachments' => '0',
+            'poll_id' => '0',
+            'moved_id' => '0',
+            'first_post_id' => $comment->id,
+            'first_post_time' => strtotime($comment->date),
+            'first_post_userid' => $comment->userid,
+            'first_post_message' => $comment->comment,
+            'first_post_guest_name' => $comment->name,
+            'last_post_id' => '0',
+            'last_post_time' => strtotime($comment->date),
+            'last_post_userid' => '0',
+            'last_post_message' => '',
+            'last_post_guest_name' => '',
+            'rating' => '0',
+            'params' => '',
+
+            // Only for debug message
+            'title' => $topic_title,
+        ];
+
+        $topic = $this->upsert('Topic', $topic);
+
+        return $topicId;
+    
+    }
+
 }
